@@ -268,15 +268,6 @@ export type FieldMergeFunction<
 const nullKeyFieldsFn: KeyFieldsFunction = () => void 0;
 const simpleKeyArgsFn: KeyArgsFunction = (_args, context) => context.fieldName;
 
-// These merge functions can be selected by specifying merge:true or
-// merge:false in a field policy.
-const mergeTrueFn: FieldMergeFunction<any> = (
-  existing,
-  incoming,
-  { mergeObjects }
-) => mergeObjects(existing, incoming);
-const mergeFalseFn: FieldMergeFunction<any> = (_, incoming) => incoming;
-
 export type PossibleTypesMap = {
   [supertype: string]: string[];
 };
@@ -285,12 +276,12 @@ export class Policies {
   private typePolicies: {
     [__typename: string]: {
       keyFn?: KeyFieldsFunction;
-      merge?: FieldMergeFunction<any>;
+      merge?: FieldMergeFunction<any> | boolean;
       fields: {
         [fieldName: string]: {
           keyFn?: KeyArgsFunction;
           read?: FieldReadFunction<any>;
-          merge?: FieldMergeFunction<any>;
+          merge?: FieldMergeFunction<any> | boolean;
         };
       };
     };
@@ -444,24 +435,9 @@ export class Policies {
     const existing = this.getTypePolicy(typename);
     const { keyFields, fields } = incoming;
 
-    function setMerge(
-      existing: { merge?: FieldMergeFunction | boolean },
-      merge?: FieldMergeFunction | boolean
-    ) {
-      existing.merge =
-        typeof merge === "function" ? merge
-          // Pass merge:true as a shorthand for a merge implementation
-          // that returns options.mergeObjects(existing, incoming).
-        : merge === true ? mergeTrueFn
-          // Pass merge:false to make incoming always replace existing
-          // without any warnings about data clobbering.
-        : merge === false ? mergeFalseFn
-        : existing.merge;
-    }
-
     // Type policies can define merge functions, as an alternative to
     // using field policies to merge child objects.
-    setMerge(existing, incoming.merge);
+    existing.merge = incoming.merge ?? existing.merge;
 
     existing.keyFn =
       // Pass false to disable normalization for this typename.
@@ -500,7 +476,7 @@ export class Policies {
             existing.read = read;
           }
 
-          setMerge(existing, merge);
+          existing.merge = merge ?? existing.merge;
         }
 
         if (existing.read && existing.merge) {
@@ -638,7 +614,7 @@ export class Policies {
     | {
         keyFn?: KeyArgsFunction;
         read?: FieldReadFunction<any>;
-        merge?: FieldMergeFunction<any>;
+        merge?: FieldMergeFunction<any> | boolean;
       }
     | undefined {
     if (typename) {
@@ -874,7 +850,7 @@ export class Policies {
     parentTypename: string | undefined,
     fieldName: string,
     childTypename: string | undefined
-  ): FieldMergeFunction | undefined {
+  ): FieldMergeFunction | boolean | undefined {
     let policy:
       | Policies["typePolicies"][string]
       | Policies["typePolicies"][string]["fields"][string]
@@ -894,7 +870,7 @@ export class Policies {
     context: WriteContext,
     storage?: StorageType
   ) {
-    if (merge === mergeTrueFn) {
+    if (merge === true) {
       // Instead of going to the trouble of creating a full
       // FieldFunctionOptions object and calling mergeTrueFn, we can
       // simply call mergeObjects, as mergeTrueFn would.
@@ -904,7 +880,7 @@ export class Policies {
       );
     }
 
-    if (merge === mergeFalseFn) {
+    if (merge === false) {
       // Likewise for mergeFalseFn, whose implementation is even simpler.
       return incoming;
     }
