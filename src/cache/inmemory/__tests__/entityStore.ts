@@ -1685,6 +1685,51 @@ describe("EntityStore", () => {
     });
   });
 
+  it.only("reproduction", () => {
+    const queryMissingKeyFields: DocumentNode = gql`
+      query {
+        abcs {
+          a
+        }
+      }
+    `;
+
+    const cache = new InMemoryCache({
+      typePolicies: {
+        ABCs: {
+          keyFields: ["b", "a", "c"],
+        },
+      },
+    });
+
+    const ABCs = {
+      __typename: "ABCs",
+      a: "ay",
+    };
+
+    expect(() => cache.writeQuery({
+      query: queryMissingKeyFields,
+      data: {
+        abcs: ABCs,
+      },
+    })).toThrow();
+
+    {
+      using consoleSpies = spyOnConsole("warn");
+      expect(cache.identify(ABCs)).toBeUndefined();
+      expect(consoleSpies.warn).toHaveBeenCalledTimes(1);
+      console.log(consoleSpies.warn.mock.calls);
+      expect(consoleSpies.warn).toHaveBeenCalledWith(
+        new InvariantError(
+          `Missing field 'b' while extracting keyFields from ${stringifyForDisplay(
+            ABCs,
+            2
+          )}`
+        )
+      );
+    }
+  });
+
   it("gracefully handles eviction amid optimistic updates", () => {
     const cache = new InMemoryCache();
     const query = gql`
